@@ -1,7 +1,6 @@
 # Rena Ahn
 # read_files.py (Python)
 # 4 November 2024
-
 # Reads patient files (.xlsx) and converts them to .csv files
 
 import numpy as np
@@ -21,8 +20,6 @@ demographic_df = demographic_df.drop(['UID1', 'UID2'], axis=1)
 
 # listed patient id
 patient_ids = list(demographic_df['ID'])
-
-#print(demographic_df.info())
 
 # individual patient files -> DataFrame
 folder_path = 'data_org/SCH_asthma_114'
