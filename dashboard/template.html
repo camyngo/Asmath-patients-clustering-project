@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asthma PEFR Analysis</title>
+<meta name="description" content="Cleaning, modeling and clustering daily peak-flow (PEFR) readings from 82 severe-asthma patients.">
+<style>
+:root{
+  color-scheme:light;
+  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10); --wash:rgba(11,11,11,.04);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --other:#a8a7a0;
+  --neg:#d03b3b; --mid:#f0efec;
+  --good:#0ca30c; --warn:#fab219; --crit:#d03b3b; --good-text:#006300;
+}
+@media (prefers-color-scheme:dark){
+  :root:where(:not([data-theme="light"])){
+    color-scheme:dark;
+    --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --wash:rgba(255,255,255,.05);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --other:#6b6a65;
+    --neg:#e66767; --mid:#383835; --good-text:#0ca30c;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --wash:rgba(255,255,255,.05);
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --other:#6b6a65;
+  --neg:#e66767; --mid:#383835; --good-text:#0ca30c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:0 16px 64px}
+header{padding:36px 0 0}
+.eyebrow{color:var(--muted);font-size:13px;letter-spacing:.02em;margin:0 0 6px}
+h1{font-size:30px;line-height:1.2;margin:0 0 10px;font-weight:650;text-wrap:balance}
+h2{font-size:19px;margin:0 0 14px;font-weight:620}
+h3{font-size:15px;margin:0 0 6px;font-weight:620}
+p{margin:0 0 10px}
+.cap{color:var(--muted);font-size:12.5px;margin:-2px 0 10px}
+.lede{color:var(--ink-2);max-width:72ch;font-size:16px}
+nav{position:sticky;top:0;z-index:5;background:var(--page);border-bottom:1px solid var(--grid);margin:20px 0 0}
+nav .in{display:flex;gap:4px;overflow-x:auto;padding:8px 0;scrollbar-width:none}
+nav a{color:var(--ink-2);text-decoration:none;font-size:13.5px;padding:6px 10px;border-radius:6px;white-space:nowrap}
+nav a:hover{background:var(--wash);color:var(--ink)}
+section{padding:28px 0 4px;scroll-margin-top:52px}
+.sub{color:var(--ink-2);margin-bottom:18px;max-width:75ch}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:820px){.g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}.g4.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px}
+.card .note{color:var(--muted);font-size:12.5px;margin-top:8px}
+.tile .lab{color:var(--ink-2);font-size:13px}
+.tile .val{font-size:30px;font-weight:620;line-height:1.15;margin:4px 0 2px}
+.tile .ctx{color:var(--muted);font-size:12.5px}
+.hero .val{font-size:52px}
+.chart{width:100%;position:relative}
+.chart svg{display:block;width:100%;overflow:visible}
+.chart text{fill:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+.chart text.lbl{fill:var(--ink-2);font-size:12.5px}
+.chart text.val{fill:var(--ink);font-size:12px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--ink-2);margin:0 0 10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.key{width:10px;height:10px;border-radius:3px;display:inline-block}
+.key.line{height:2px;width:14px;border-radius:1px}
+.key.dot{border-radius:50%}
+#tip{position:fixed;pointer-events:none;z-index:20;background:var(--surface);color:var(--ink);border:1px solid var(--border);box-shadow:0 4px 16px rgba(0,0,0,.12);border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.45;opacity:0;transition:opacity .08s;max-width:260px}
+#tip b{font-weight:620}
+#tip .m{color:var(--ink-2)}
+.steps{counter-reset:s}
+.step{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;padding:14px 0;border-top:1px solid var(--grid)}
+.step:first-child{border-top:0}
+.step .n{counter-increment:s;width:26px;height:26px;border-radius:50%;background:var(--wash);border:1px solid var(--border);display:grid;place-items:center;font-size:12.5px;color:var(--ink-2)}
+.step .n::before{content:counter(s)}
+.step code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--wash);padding:1px 5px;border-radius:4px}
+.step .why{color:var(--ink-2);font-size:14px}
+.flag{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;padding:12px 0;border-top:1px solid var(--grid);font-size:14px}
+.flag:first-of-type{border-top:0}
+.ic{width:16px;height:16px;margin-top:3px}
+.flag b{font-weight:620}
+.flag .d{color:var(--ink-2)}
+.pill{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;border:1px solid var(--border);color:var(--ink-2);margin-left:6px;vertical-align:1px}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+select,button.seg{font:inherit;font-size:13.5px;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px}
+.segs{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.segs button{border:0;border-radius:0;background:var(--surface);color:var(--ink-2);padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.segs button[aria-pressed="true"]{background:var(--wash);color:var(--ink);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--grid);font-variant-numeric:tabular-nums}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--ink-2);font-weight:560;font-size:12.5px}
+.tbl{overflow-x:auto}
+details{margin-top:10px}
+summary{cursor:pointer;color:var(--ink-2);font-size:13px}
+.callout{border-left:3px solid var(--s1);padding:2px 0 2px 14px;margin:6px 0 4px;color:var(--ink-2)}
+.themebtn{position:absolute;top:16px;right:16px;background:var(--surface);border:1px solid var(--border);color:var(--ink-2);border-radius:8px;padding:5px 10px;font:inherit;font-size:12.5px;cursor:pointer}
+@media(max-width:600px){header{padding-top:60px}}
+footer{color:var(--muted);font-size:12.5px;padding-top:40px;border-top:1px solid var(--grid);margin-top:40px}
+</style>
+</head>
+<body>
+<div id="tip" role="status"></div>
+<div class="wrap" style="position:relative">
+<button class="themebtn" id="themebtn" type="button">Theme</button>
+<header>
+  <h1>Severe asthma · daily peak flow (PEFR)</h1>
+  <p class="cap">82 patients · Soonchunhyang University Bucheon Hospital</p>
+</header>
+<nav><div class="in">
+  <a href="#overview">Overview</a><a href="#data">Data</a><a href="#explorer">Patients</a><a href="#drivers">Drivers</a><a href="#models">Models</a><a href="#clusters">Clusters</a>
+</div></nav>
+
+<section id="overview">
+  <div class="grid g4 tiles">
+    <div class="card tile hero"><div class="lab">Patients analyzed</div><div class="val" id="k-pat"></div><div class="ctx">of 114 enrolled</div></div>
+    <div class="card tile"><div class="lab">Daily readings</div><div class="val" id="k-rows"></div><div class="ctx">after cleaning</div></div>
+    <div class="card tile"><div class="lab">R² · PEFR-derived features</div><div class="val" id="k-r2a"></div><div class="ctx">original notebook</div></div>
+    <div class="card tile"><div class="lab">R² · demographics only</div><div class="val" id="k-r2b"></div><div class="ctx">Ridge, 5-fold CV</div></div>
+  </div>
+</section>
+
+<section id="data">
+  <h2>Data</h2>
+  <div class="grid g2">
+    <div class="card"><h3>Patients remaining at each step</h3><div class="chart" id="c-funnel"></div></div>
+    <div class="card"><h3>Completeness tiers</h3><div class="chart" id="c-tiers"></div></div>
+    <div class="card"><h3>Share of days with a reading</h3><div class="chart" id="c-colcomp"></div></div>
+    <div class="card"><h3>Missing cells</h3><div class="legend" id="l-imp"></div><div class="chart" id="c-imp"></div></div>
+  </div>
+</section>
+
+<section id="explorer">
+  <h2>Patients</h2>
+  <div class="card">
+    <div class="controls">
+      <select id="pick" aria-label="Patient"></select>
+      <div class="legend" style="margin:0 0 0 auto"><span><i class="key line" style="background:var(--s1)"></i>AM</span><span><i class="key line" style="background:var(--s2)"></i>PM</span></div>
+    </div>
+    <div class="grid g4 tiles" id="p-tiles" style="margin-bottom:14px"></div>
+    <div class="chart" id="c-series"></div>
+    <p class="cap">Weekly mean, L/min</p>
+  </div>
+</section>
+
+<section id="drivers">
+  <h2>Drivers</h2>
+  <div class="grid g2">
+    <div class="card"><h3>Correlation with mean AM PEFR</h3><p class="cap">Spearman ρ, n = 80</p><div class="chart" id="c-corr"></div></div>
+    <div class="card"><h3>Height vs mean AM PEFR</h3><p class="cap">One dot per patient</p><div class="chart" id="c-height"></div></div>
+  </div>
+</section>
+
+<section id="models">
+  <h2>Models</h2>
+  <div class="card">
+    <h3>Cross-validated R² by model and feature set</h3>
+    <p class="cap">5-fold CV × 20 repeats · predicting mean AM PEFR</p>
+    <div class="legend" id="l-models"></div>
+    <div class="chart" id="c-models"></div>
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Predicted vs actual</h3>
+      <div class="controls"><div class="segs" role="group" aria-label="Feature set">
+        <button type="button" data-set="leaky" aria-pressed="true">PEFR-derived features</button>
+        <button type="button" data-set="demo" aria-pressed="false">Demographics only</button>
+      </div></div>
+      <div class="chart" id="c-pva"></div>
+    </div>
+    <div class="card">
+      <h3>Ridge coefficients · demographics only</h3>
+      <p class="cap">L/min per 1 SD of feature</p>
+      <div class="chart" id="c-imp2"></div>
+    </div>
+  </div>
+</section>
+
+<section id="clusters">
+  <h2>Clusters</h2>
+  <div class="grid g2">
+    <div class="card"><h3>Mean vs variability of AM PEFR</h3><p class="cap">k-means, k = 4</p><div class="legend" id="l-clu"></div><div class="chart" id="c-clu"></div></div>
+    <div class="card"><h3>Silhouette score by k</h3><div class="chart" id="c-sil"></div></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Cluster profiles</h3>
+    <div class="tbl"><table id="t-clu"></table></div>
+  </div>
+</section>
+
+<footer>Data: Division of Allergy and Respiratory Medicine, Soonchunhyang University Bucheon Hospital · Camy Ngo &amp; Rena Ahn</footer>
+</div>
+
+<script>
+const D = __DATA__;
+const $ = s => document.querySelector(s);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const NS = 'http://www.w3.org/2000/svg';
+const fmt = (v, d=0) => v == null ? '–' : Number(v).toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d});
+const compact = v => Math.abs(v) >= 1000 ? (v/1000).toLocaleString('en-US',{maximumFractionDigits:1})+'K' : String(Math.round(v*100)/100);
+
+// ---------- theme toggle ----------
+(() => {
+  const btn = $('#themebtn'); let t = null;
+  try { t = localStorage.getItem('theme'); } catch(e) {}
+  if (t) document.documentElement.dataset.theme = t;
+  const label = () => { const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; btn.textContent = dark ? 'Light mode' : 'Dark mode'; return dark; };
+  label();
+  btn.onclick = () => { const next = label() ? 'light' : 'dark'; document.documentElement.dataset.theme = next; try { localStorage.setItem('theme', next); } catch(e) {} label(); renderAll(); };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { label(); renderAll(); });
+})();
+
+// ---------- tooltip ----------
+const tip = $('#tip');
+function showTip(html, e) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const hideTip = () => tip.style.opacity = 0;
+function hover(el, html) {
+  el.addEventListener('mousemove', e => showTip(typeof html === 'function' ? html() : html, e));
+  el.addEventListener('mouseleave', hideTip);
+  el.setAttribute('tabindex', '0');
+  el.addEventListener('focus', () => { const b = el.getBoundingClientRect(); showTip(typeof html === 'function' ? html() : html, {clientX:b.right, clientY:b.top}); });
+  el.addEventListener('blur', hideTip);
+}
+
+// ---------- svg helpers ----------
+function el(tag, attrs={}, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function txt(parent, x, y, s, attrs={}) { const t = el('text', {x, y, ...attrs}, parent); t.textContent = s; return t; }
+function mkSvg(id, h) {
+  const box = $(id); box.innerHTML = '';
+  const w = Math.max(280, box.clientWidth);
+  const svg = el('svg', {viewBox:`0 0 ${w} ${h}`, height:h, role:'img'}, box);
+  return {svg, w, h};
+}
+function niceTicks(lo, hi, n=5) {
+  const span = hi - lo, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1,2,2.5,5,10].map(m => m*mag).find(s => span/s <= n) || 10*mag;
+  const out = []; for (let v = Math.ceil(lo/step)*step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+// bar path with 4px rounded data-end, square at baseline (horizontal)
+function hbarPath(x0, x1, y, h) {
+  const r = Math.min(4, Math.abs(x1-x0)/2, h/2);
+  if (x1 >= x0) return `M${x0},${y}H${x1-r}Q${x1},${y} ${x1},${y+r}V${y+h-r}Q${x1},${y+h} ${x1-r},${y+h}H${x0}Z`;
+  return `M${x0},${y}H${x1+r}Q${x1},${y} ${x1},${y+r}V${y+h-r}Q${x1},${y+h} ${x1+r},${y+h}H${x0}Z`;
+}
+function vbarPath(x, y0, y1, w) {
+  const r = Math.min(4, Math.abs(y0-y1)/2, w/2);
+  return `M${x},${y0}V${y1+r}Q${x},${y1} ${x+r},${y1}H${x+w-r}Q${x+w},${y1} ${x+w},${y1+r}V${y0}Z`;
+}
+function legend(id, items) {
+  $(id).innerHTML = items.map(([c, l, kind]) => `<span><i class="key ${kind||''}" style="background:${c}"></i>${l}</span>`).join('');
+}
+
+// ---------- horizontal bars (single or grouped) ----------
+function hbars(id, rows, {series, domain, labelW=170, fmtV=v=>fmt(v), tipF, barH=18, gap=2, rowGap=14, zeroLabel}) {
+  series = series || [{key:'v', color:css('--s1')}];
+  const per = series.length * barH + (series.length-1)*gap;
+  const stack = $(id).clientWidth < 440, lh = stack ? 18 : 0;
+  const top = 6, h = top + rows.length * (per + rowGap + lh) + 22;
+  const {svg, w} = mkSvg(id, h);
+  if (stack) labelW = 8;
+  const valW = 52, x0 = labelW, x1 = w - valW;
+  const lo = domain ? domain[0] : 0, hi = domain ? domain[1] : Math.max(...rows.flatMap(r => series.map(s => r[s.key])));
+  const X = v => x0 + (v - lo) / (hi - lo) * (x1 - x0);
+  niceTicks(lo, hi, 5).forEach(t => {
+    el('line', {x1:X(t), x2:X(t), y1:top-4, y2:h-20, stroke:css('--grid')}, svg);
+    txt(svg, X(t), h-6, compact(t), {'text-anchor':'middle'});
+  });
+  el('line', {x1:X(Math.max(lo,0)), x2:X(Math.max(lo,0)), y1:top-4, y2:h-20, stroke:css('--axis')}, svg);
+  rows.forEach((r, i) => {
+    const y = top + i * (per + rowGap + lh) + lh;
+    if (stack) txt(svg, x0, y - 6, r.label, {class:'lbl'});
+    else txt(svg, x0 - 10, y + per/2 + 4, r.label, {'text-anchor':'end', class:'lbl'});
+    series.forEach((s, j) => {
+      const v = r[s.key]; if (v == null) return;
+      const yy = y + j*(barH+gap), base = X(Math.max(lo,0));
+      const p = el('path', {d:hbarPath(base, X(v), yy, barH), fill:s.color}, svg);
+      const hit = el('rect', {x:x0, y:yy-1, width:x1-x0+valW, height:barH+2, fill:'transparent'}, svg);
+      hover(hit, tipF ? tipF(r, s) : `<b>${r.label}</b><br>${fmtV(v)}`);
+      const vx = v >= 0 ? X(v) + 6 : base + 6;
+      txt(svg, vx, yy + barH/2 + 4, fmtV(v), {class:'val'});
+    });
+  });
+}
+
+// ---------- scatter ----------
+function scatter(id, pts, {x, y, h=320, xLabel, yLabel, color, diag, fit, tipF, xDom, yDom, shape}) {
+  const {svg, w} = mkSvg(id, h);
+  const m = {l:48, r:12, t:10, b:40};
+  const xs = pts.map(x), ys = pts.map(y);
+  const xd = xDom || pad(Math.min(...xs), Math.max(...xs)), yd = yDom || pad(Math.min(...ys), Math.max(...ys));
+  const X = v => m.l + (v - xd[0])/(xd[1]-xd[0])*(w-m.l-m.r), Y = v => h-m.b - (v - yd[0])/(yd[1]-yd[0])*(h-m.t-m.b);
+  niceTicks(yd[0], yd[1], 5).forEach(t => { el('line',{x1:m.l,x2:w-m.r,y1:Y(t),y2:Y(t),stroke:css('--grid')},svg); txt(svg,m.l-8,Y(t)+4,compact(t),{'text-anchor':'end'}); });
+  niceTicks(xd[0], xd[1], Math.max(3, Math.floor(w/90))).forEach(t => txt(svg,X(t),h-m.b+16,compact(t),{'text-anchor':'middle'}));
+  el('line',{x1:m.l,x2:w-m.r,y1:h-m.b,y2:h-m.b,stroke:css('--axis')},svg);
+  txt(svg, (m.l+w-m.r)/2, h-4, xLabel, {'text-anchor':'middle', class:'lbl'});
+  txt(svg, 12, (m.t+h-m.b)/2, yLabel, {'text-anchor':'middle', class:'lbl', transform:`rotate(-90 12 ${(m.t+h-m.b)/2})`});
+  if (diag) { const a = Math.max(xd[0],yd[0]), b = Math.min(xd[1],yd[1]); el('line',{x1:X(a),y1:Y(a),x2:X(b),y2:Y(b),stroke:css('--axis'),'stroke-width':1.5},svg); }
+  if (fit) {
+    const n = xs.length, mx = xs.reduce((a,b)=>a+b)/n, my = ys.reduce((a,b)=>a+b)/n;
+    const sl = xs.reduce((s,v,i)=>s+(v-mx)*(ys[i]-my),0) / xs.reduce((s,v)=>s+(v-mx)**2,0);
+    el('line',{x1:X(xd[0]),y1:Y(my+sl*(xd[0]-mx)),x2:X(xd[1]),y2:Y(my+sl*(xd[1]-mx)),stroke:css('--ink-2'),'stroke-width':1.5,opacity:.6},svg);
+  }
+  const surf = css('--surface');
+  pts.forEach(p => {
+    const cx = X(x(p)), cy = Y(y(p)), c = color ? color(p) : css('--s1');
+    const sh = shape ? shape(p) : 'circle';
+    if (sh === 'square') el('rect',{x:cx-4.5,y:cy-4.5,width:9,height:9,rx:1.5,fill:c,stroke:surf,'stroke-width':2},svg);
+    else if (sh === 'diamond') el('path',{d:`M${cx},${cy-6}L${cx+6},${cy}L${cx},${cy+6}L${cx-6},${cy}Z`,fill:c,stroke:surf,'stroke-width':2},svg);
+    else el('circle',{cx,cy,r:4.5,fill:c,stroke:surf,'stroke-width':2},svg);
+    const hit = el('circle',{cx,cy,r:10,fill:'transparent'},svg);
+    hover(hit, tipF(p));
+  });
+}
+function pad(a, b) { const p = (b-a)*0.06 || 1; return [a-p, b+p]; }
+
+// ---------- vertical columns ----------
+function columns(id, rows, {h=220, fmtV, tipF, color, yDom}) {
+  const {svg, w} = mkSvg(id, h);
+  const m = {l:40, r:8, t:20, b:28};
+  const hi = yDom ? yDom[1] : Math.max(...rows.map(r=>r.v)), lo = yDom ? yDom[0] : 0;
+  const Y = v => h-m.b - (v-lo)/(hi-lo)*(h-m.t-m.b);
+  niceTicks(lo, hi, 4).forEach(t => { el('line',{x1:m.l,x2:w-m.r,y1:Y(t),y2:Y(t),stroke:css('--grid')},svg); txt(svg,m.l-8,Y(t)+4,compact(t),{'text-anchor':'end'}); });
+  const band = (w-m.l-m.r)/rows.length, bw = Math.min(24, band*0.6);
+  rows.forEach((r,i) => {
+    const x = m.l + band*i + (band-bw)/2;
+    el('path',{d:vbarPath(x, Y(lo), Y(r.v), bw), fill: color ? color(r) : css('--s1')},svg);
+    txt(svg, x+bw/2, Y(r.v)-6, fmtV(r.v), {'text-anchor':'middle', class:'val'});
+    txt(svg, x+bw/2, h-m.b+16, r.label, {'text-anchor':'middle'});
+    const hit = el('rect',{x:m.l+band*i,y:m.t,width:band,height:h-m.t-m.b,fill:'transparent'},svg);
+    hover(hit, tipF(r));
+  });
+  el('line',{x1:m.l,x2:w-m.r,y1:Y(lo),y2:Y(lo),stroke:css('--axis')},svg);
+}
+
+// ---------- time series with crosshair ----------
+function series(id, s) {
+  const h = 300, {svg, w} = mkSvg(id, h);
+  const m = {l:44, r:14, t:10, b:30};
+  const t = s.d.map(d => new Date(d+'T00:00:00').getTime());
+  const vals = s.am.concat(s.pm).filter(v => v != null);
+  const yd = pad(Math.min(...vals), Math.max(...vals)), xd = [t[0], t[t.length-1] || t[0]+1];
+  const X = v => m.l + (v-xd[0])/((xd[1]-xd[0])||1)*(w-m.l-m.r), Y = v => h-m.b - (v-yd[0])/(yd[1]-yd[0])*(h-m.t-m.b);
+  niceTicks(yd[0], yd[1], 5).forEach(v => { el('line',{x1:m.l,x2:w-m.r,y1:Y(v),y2:Y(v),stroke:css('--grid')},svg); txt(svg,m.l-8,Y(v)+4,compact(v),{'text-anchor':'end'}); });
+  const y0 = new Date(xd[0]).getFullYear(), y1 = new Date(xd[1]).getFullYear();
+  const monthsN = Math.max(1, Math.round((xd[1]-xd[0])/2.6e9));
+  const stepM = (monthsN > 36 || (w < 500 && monthsN > 12)) ? 12 : (monthsN > 18 || w < 500) ? 6 : 3;
+  for (let yr = y0; yr <= y1; yr++) for (let mo = 0; mo < 12; mo += stepM) {
+    const tt = new Date(yr, mo, 1).getTime(); if (tt < xd[0] || tt > xd[1]) continue;
+    txt(svg, X(tt), h-m.b+16, new Date(tt).toLocaleDateString('en-US',{month:'short',year:'2-digit'}), {'text-anchor':'middle'});
+  }
+  el('line',{x1:m.l,x2:w-m.r,y1:h-m.b,y2:h-m.b,stroke:css('--axis')},svg);
+  [['pm','--s2'],['am','--s1']].forEach(([k, c]) => {
+    let d = '', pen = false;
+    s[k].forEach((v,i) => { if (v == null) { pen = false; return; } d += (pen?'L':'M') + X(t[i]).toFixed(1) + ',' + Y(v).toFixed(1); pen = true; });
+    if (d) el('path',{d, fill:'none', stroke:css(c), 'stroke-width':2, 'stroke-linejoin':'round', 'stroke-linecap':'round'}, svg);
+  });
+  const cross = el('line',{y1:m.t,y2:h-m.b,stroke:css('--axis'),opacity:0},svg);
+  const dA = el('circle',{r:4.5,fill:css('--s1'),stroke:css('--surface'),'stroke-width':2,opacity:0},svg);
+  const dP = el('circle',{r:4.5,fill:css('--s2'),stroke:css('--surface'),'stroke-width':2,opacity:0},svg);
+  const ov = el('rect',{x:m.l,y:m.t,width:w-m.l-m.r,height:h-m.t-m.b,fill:'transparent'},svg);
+  ov.addEventListener('mousemove', e => {
+    const b = svg.getBoundingClientRect(), px = (e.clientX - b.left) * (w / b.width);
+    const tv = xd[0] + (px-m.l)/(w-m.l-m.r)*(xd[1]-xd[0]);
+    let i = 0, best = Infinity; t.forEach((v,j) => { const dd = Math.abs(v-tv); if (dd < best) { best = dd; i = j; } });
+    cross.setAttribute('x1', X(t[i])); cross.setAttribute('x2', X(t[i])); cross.setAttribute('opacity', 1);
+    [[dA,s.am[i]],[dP,s.pm[i]]].forEach(([dot,v]) => { if (v == null) dot.setAttribute('opacity',0); else { dot.setAttribute('cx',X(t[i])); dot.setAttribute('cy',Y(v)); dot.setAttribute('opacity',1); } });
+    showTip(`<b>Week of ${new Date(t[i]).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</b><br><span class="key line" style="background:${css('--s1')}"></span> AM ${fmt(s.am[i])} L/min<br><span class="key line" style="background:${css('--s2')}"></span> PM ${fmt(s.pm[i])} L/min`, e);
+  });
+  ov.addEventListener('mouseleave', () => { hideTip(); [cross,dA,dP].forEach(n => n.setAttribute('opacity',0)); });
+}
+
+// ---------- data prep ----------
+const P = D.patients;
+const clusterOf = Object.fromEntries(D.cluster_pts.map(p => [p.id, p]));
+const CL = [
+  {name:'Low & highly variable', color:'--other', shape:'diamond'},
+  {name:'Moderate & variable', color:'--s2', shape:'circle'},
+  {name:'Moderate & stable', color:'--s1', shape:'circle'},
+  {name:'High & stable', color:'--s3', shape:'circle'},
+];
+const modelsDemo = D.models.filter(r => r.set === 'demographic');
+const modelsLeaky = D.models.filter(r => r.set === 'leaky' && r.model !== 'pefr_median alone');
+const ridgeDemo = modelsDemo.find(r => r.model === 'Ridge');
+
+$('#k-pat').textContent = D.funnel[D.funnel.length-1].n;
+$('#k-rows').textContent = (D.imputation.rows/1000).toFixed(1) + 'K';
+$('#k-r2a').textContent = '0.98';
+$('#k-r2b').textContent = ridgeDemo.r2.toFixed(2);
+
+// patient picker
+const ids = Object.keys(D.series).sort();
+$('#pick').innerHTML = ids.map(i => `<option>${i}</option>`).join('');
+$('#pick').value = 'SB-092';
+$('#pick').onchange = renderPatient;
+function renderPatient() {
+  const id = $('#pick').value, p = P.find(r => r.id === id), c = clusterOf[id];
+  const s = D.series[id];
+  const tiles = [
+    ['Mean AM PEFR', p ? fmt(p.pefr_mean) + ' L/min' : '–', p ? `range ${fmt(p.pefr_min)}–${fmt(p.pefr_max)}` : 'too few AM readings'],
+    ['Variability (CV)', c ? (c.cv*100).toFixed(1) + '%' : '–', ''],
+    ['AM readings', p ? fmt(p.pefr_count) : '–', `${s.d[0]} → ${s.d[s.d.length-1]}`],
+    ['Cluster', c ? CL[c.c].name : 'Not clustered', ''],
+  ];
+  $('#p-tiles').innerHTML = tiles.map(([l,v,x]) => `<div class="tile" style="padding:2px 0"><div class="lab">${l}</div><div class="val" style="font-size:22px">${v}</div><div class="ctx">${x}</div></div>`).join('');
+  series('#c-series', s);
+}
+
+function renderAll() {
+  hideTip();
+  hbars('#c-funnel', D.funnel.map(f => ({label:{'Patients in demographic sheet':'Enrolled','Patient PEFR files received':'PEFR file received','Files matched to a demographic ID':'Matched to demographics','Span ≥ 1 year of readings':'≥ 1 year of readings'}[f.step], v:f.n})), {labelW:170, domain:[0,120], fmtV:v=>fmt(v), tipF:r=>`<b>${r.label}</b><br>${r.v} patients`});
+  hbars('#c-tiers', ['high','medium','low'].map(k => ({label:k[0].toUpperCase()+k.slice(1), a:D.tiers[k][0], b:D.tiers[k][1]})),
+    {series:[{key:'a', color:css('--other'), name:'Before'},{key:'b', color:css('--s1'), name:'After'}], domain:[0,60], labelW:80, tipF:(r,s)=>`<b>${r.label}</b><br>${s.name} 1-year filter: ${r[s.key]} patients`});
+  $('#c-tiers').insertAdjacentHTML('afterbegin', `<div class="legend"><span><i class="key" style="background:${css('--other')}"></i>Before 1-year filter</span><span><i class="key" style="background:${css('--s1')}"></i>After</span></div>`);
+  hbars('#c-colcomp', [['Morning (AM)','am'],['Evening (PM)','pm'],['Other','other']].map(([l,k]) => ({label:l, v:D.colcomp[k]*100})),
+    {domain:[0,100], labelW:110, fmtV:v=>fmt(v)+'%', tipF:r=>`<b>${r.label}</b><br>${fmt(r.v,1)}% of days have a reading`});
+  legend('#l-imp', [[css('--other'),'Before imputation'],[css('--s1'),'After imputation']]);
+  hbars('#c-imp', [['Morning (AM)','am'],['Evening (PM)','pm'],['Other','other']].map(([l,k]) => ({label:l, a:D.imputation.missing_before[k], b:D.imputation.missing_after[k]})),
+    {series:[{key:'a', color:css('--other'), name:'Before'},{key:'b', color:css('--s1'), name:'After'}], labelW:110, fmtV:v=>compact(v), tipF:(r,s)=>`<b>${r.label}</b><br>${s.name}: ${fmt(r[s.key])} missing cells (${fmt(r[s.key]/D.imputation.rows*100,1)}%)`});
+
+  renderPatient();
+
+  const nice = {age:'Age', sex_f:'Female', ever_smoker:'Ever smoked', smoke_amount:'Smoking amount', height:'Height', weight:'Weight', bmi:'BMI', bsa:'Body surface area'};
+  const cr = [...D.corr_target].sort((a,b) => b.r - a.r);
+  hbars('#c-corr', cr.map(r => ({label:nice[r.f], v:r.r})), {domain:[-0.2,0.8], labelW:130, barH:16, rowGap:10, fmtV:v=>(v>0?'+':'')+v.toFixed(2),
+    tipF:r=>`<b>${r.label}</b><br>Spearman ρ = ${r.v.toFixed(2)}`});
+  scatter('#c-height', P, {x:p=>p.height, y:p=>p.pefr_mean, xLabel:'Height (cm)', yLabel:'Mean AM PEFR (L/min)', fit:true,
+    tipF:p=>`<b>${p.id}</b><br>Height ${p.height} cm<br>Mean AM PEFR ${fmt(p.pefr_mean)} L/min`});
+
+  legend('#l-models', [[css('--s2'),'PEFR-derived features'],[css('--s1'),'Demographics only']]);
+  const mrows = ['Linear','Ridge','Lasso','Random forest'].map(n => ({label:n, a:modelsLeaky.find(r=>r.model===n).r2, b:modelsDemo.find(r=>r.model===n).r2,
+     ra:modelsLeaky.find(r=>r.model===n), rb:modelsDemo.find(r=>r.model===n)}));
+  const base = D.models.find(r => r.model.startsWith('Baseline')), med = D.models.find(r => r.model === 'pefr_median alone');
+  mrows.unshift({label:'Median only', a:med.r2, b:null, ra:med});
+  mrows.push({label:'Predict the average', a:null, b:base.r2, rb:base});
+  hbars('#c-models', mrows, {series:[{key:'a', color:css('--s2'), name:'With PEFR-derived features', rk:'ra'},{key:'b', color:css('--s1'), name:'Demographics only', rk:'rb'}],
+    domain:[-0.2,1], labelW:140, barH:14, rowGap:12, fmtV:v=>v.toFixed(2),
+    tipF:(r,s)=>{ const q = r[s.rk]; return `<b>${r.label}</b> · ${s.name}<br>R² ${q.r2.toFixed(3)} ± ${q.r2_sd.toFixed(2)}<br>RMSE ${fmt(q.rmse,1)} L/min`; }});
+
+  drawPva();
+
+  const fn = {age:'Age', sex_f:'Female', ever_smoker:'Ever smoked', smoke_amount:'Smoking amount', height:'Height', weight:'Weight', bmi:'BMI', bsa:'Body surface area', reg_Incheon:'Lives in Incheon', reg_Seoul:'Lives in Seoul', reg_Other:'Lives elsewhere'};
+  const imp = [...D.importance].sort((a,b) => b.ridge - a.ridge);
+  hbars('#c-imp2', imp.map(r => ({label:fn[r.f], v:r.ridge, rf:r.rf})), {domain:[-30,40], labelW:130, barH:14, rowGap:9, fmtV:v=>(v>0?'+':'')+v.toFixed(1),
+    tipF:r=>`<b>${r.label}</b><br>Ridge coefficient ${r.v>0?'+':''}${r.v.toFixed(1)} L/min per SD<br>Random-forest importance ${(r.rf*100).toFixed(0)}%`});
+
+  legend('#l-clu', CL.map((c,i) => [css(c.color), `${c.name} (${D.clusters[i].n})`, c.shape==='diamond'?'':'dot']));
+  scatter('#c-clu', D.cluster_pts, {x:p=>p.cv*100, y:p=>p.mean, xLabel:'Day-to-day variability, CV (%)', yLabel:'Mean AM PEFR (L/min)', h:330,
+    color:p=>css(CL[p.c].color), shape:p=>CL[p.c].shape, tipF:p=>`<b>${p.id}</b> · ${CL[p.c].name}<br>Mean ${fmt(p.mean)} L/min<br>CV ${(p.cv*100).toFixed(1)}%`});
+  columns('#c-sil', D.silhouette.map(s => ({label:'k = '+s.k, v:s.sil, k:s.k})), {yDom:[0,0.5], fmtV:v=>v.toFixed(2),
+    color:r=>r.k===4?css('--s1'):css('--other'), tipF:r=>`<b>${r.label}</b><br>Silhouette ${r.v.toFixed(3)}`});
+  $('#t-clu').innerHTML = `<thead><tr><th>Cluster</th><th>Patients</th><th>Mean AM PEFR</th><th>CV</th><th>Age</th><th>Height</th><th>BMI</th><th>Female</th><th>Ever smoked</th></tr></thead><tbody>` +
+    D.clusters.map((c,i) => `<tr><td><i class="key ${CL[i].shape==='diamond'?'':'dot'}" style="background:${css(CL[i].color)};margin-right:8px"></i>${CL[i].name}</td><td>${c.n}</td><td>${fmt(c.pefr_mean)}</td><td>${(c.pefr_cv*100).toFixed(1)}%</td><td>${fmt(c.age)}</td><td>${fmt(c.height)} cm</td><td>${fmt(c.bmi,1)}</td><td>${fmt(c.female*100)}%</td><td>${fmt(c.ever_smoker*100)}%</td></tr>`).join('') + '</tbody>';
+}
+let pvaSet = 'leaky';
+function drawPva() {
+  const all = D.pva.flatMap(p => [p.actual, p.leaky, p.demo]);
+  const dom = pad(Math.min(...all), Math.max(...all));
+  scatter('#c-pva', D.pva, {x:p=>p.actual, y:p=>p[pvaSet], xLabel:'Actual (L/min)', yLabel:'Predicted (L/min)', diag:true, xDom:dom, yDom:dom,
+    color:()=>css(pvaSet==='leaky'?'--s2':'--s1'), tipF:p=>`<b>${p.id}</b><br>Actual ${fmt(p.actual)}<br>Predicted ${fmt(p[pvaSet])}<br>Error ${fmt(p[pvaSet]-p.actual)} L/min`});
+}
+document.querySelectorAll('[data-set]').forEach(b => b.onclick = () => {
+  pvaSet = b.dataset.set;
+  document.querySelectorAll('[data-set]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  drawPva();
+});
+renderAll();
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderAll, 120); });
+</script>
+</body>
+</html>
