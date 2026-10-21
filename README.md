@@ -4,9 +4,11 @@ Can a patient's demographics predict how well they breathe? This project cleans 
 
 **Stack:** Python · pandas · NumPy · scikit-learn · Matplotlib · HTML/SVG dashboard
 
-![Dashboard preview](docs/dashboard.png)
+**[View the live dashboard →](https://mellifluous-quokka-d2218e.netlify.app/)**
 
-**Interactive dashboard:** [`dashboard/index.html`](dashboard/index.html). Download it and open it in any browser. It is a single file with no dependencies.
+[![Dashboard preview](docs/dashboard.png)](https://mellifluous-quokka-d2218e.netlify.app/)
+
+The dashboard source is [`dashboard/index.html`](dashboard/index.html), a single file with no dependencies.
 
 ## Key results
 
